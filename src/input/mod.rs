@@ -1737,6 +1737,38 @@ impl State {
 
         std::mem::drop(shell);
 
+        if event.state() == KeyState::Pressed
+            && modifiers.logo
+            && !modifiers.ctrl
+            && !modifiers.alt
+        {
+            let sym = handle.modified_sym();
+            let binding = shortcuts::Binding {
+                modifiers: cosmic_modifiers_from_smithay(*modifiers),
+                keycode: None,
+                key: Some(sym),
+                description: None,
+            };
+
+            match sym {
+                Keysym::z | Keysym::Z => {
+                    seat.supressed_keys().add(&handle, None);
+                    return FilterResult::Intercept(Some((
+                        Action::Private(PrivateAction::UndoLayout),
+                        binding,
+                    )));
+                }
+                Keysym::y | Keysym::Y => {
+                    seat.supressed_keys().add(&handle, None);
+                    return FilterResult::Intercept(Some((
+                        Action::Private(PrivateAction::RedoLayout),
+                        binding,
+                    )));
+                }
+                _ => {}
+            }
+        }
+
         // cancel grabs
         if is_grabbed
             && handle.modified_sym() == Keysym::Escape

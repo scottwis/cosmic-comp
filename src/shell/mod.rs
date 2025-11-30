@@ -1847,6 +1847,44 @@ impl Shell {
         }
     }
 
+    pub fn undo_layout(
+        &mut self,
+        seat: &Seat<State>,
+        workspace_state: &mut WorkspaceUpdateGuard<'_, State>,
+    ) -> Option<KeyboardFocusTarget> {
+        let output = seat.active_output();
+        let workspace = self.active_space_mut(&output)?;
+        if workspace.undo_layout(seat, workspace_state) {
+            workspace
+                .focus_stack
+                .get(seat)
+                .last()
+                .cloned()
+                .map(KeyboardFocusTarget::from)
+        } else {
+            None
+        }
+    }
+
+    pub fn redo_layout(
+        &mut self,
+        seat: &Seat<State>,
+        workspace_state: &mut WorkspaceUpdateGuard<'_, State>,
+    ) -> Option<KeyboardFocusTarget> {
+        let output = seat.active_output();
+        let workspace = self.active_space_mut(&output)?;
+        if workspace.redo_layout(seat, workspace_state) {
+            workspace
+                .focus_stack
+                .get(seat)
+                .last()
+                .cloned()
+                .map(KeyboardFocusTarget::from)
+        } else {
+            None
+        }
+    }
+
     pub fn refresh_active_space(&mut self, output: &Output) {
         if let Some(w) = self.workspaces.active_mut(output) {
             w.refresh()

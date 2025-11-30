@@ -97,6 +97,28 @@ impl State {
                         .finish_resize(direction, edge.into());
                 }
             }
+
+            Action::Private(PrivateAction::UndoLayout) => {
+                let focus = {
+                    let mut shell = self.common.shell.write();
+                    let mut guard = self.common.workspace_state.update();
+                    shell.undo_layout(seat, &mut guard)
+                };
+                if let Some(target) = focus {
+                    Shell::set_focus(self, Some(&target), seat, Some(serial), true);
+                }
+            }
+
+            Action::Private(PrivateAction::RedoLayout) => {
+                let focus = {
+                    let mut shell = self.common.shell.write();
+                    let mut guard = self.common.workspace_state.update();
+                    shell.redo_layout(seat, &mut guard)
+                };
+                if let Some(target) = focus {
+                    Shell::set_focus(self, Some(&target), seat, Some(serial), true);
+                }
+            }
         }
     }
 

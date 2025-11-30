@@ -1,5 +1,7 @@
 use crate::shell::focus::FocusTarget;
 use crate::shell::layout::tiling::RestoreTilingState;
+mod undo;
+use undo::LayoutHistory;
 use crate::wayland::handlers::xdg_activation::ActivationContext;
 use crate::{
     backend::render::{
@@ -109,6 +111,7 @@ pub struct Workspace {
 
     pub handle: WorkspaceHandle,
     pub focus_stack: FocusStacks,
+    layout_history: LayoutHistory,
     pub screencopy: ScreencopySessions,
     output_stack: VecDeque<OutputMatch>,
     pub(super) backdrop_id: Id,
@@ -364,7 +367,7 @@ impl Workspace {
         let floating_layer = FloatingLayout::new(theme, &output);
         let output_match = output_match_for_output(&output);
 
-        Workspace {
+        let mut workspace = Workspace {
             output,
             tiling_layer,
             floating_layer,
@@ -375,6 +378,7 @@ impl Workspace {
             id: None,
             handle,
             focus_stack: FocusStacks::default(),
+            layout_history: LayoutHistory::new(),
             screencopy: ScreencopySessions::default(),
             output_stack: {
                 let mut queue = VecDeque::new();
@@ -383,7 +387,10 @@ impl Workspace {
             },
             backdrop_id: Id::new(),
             dirty: AtomicBool::new(false),
-        }
+        };
+
+        workspace.initialize_layout_history();
+        workspace
     }
 
     pub fn from_pinned(
@@ -396,7 +403,7 @@ impl Workspace {
         let floating_layer = FloatingLayout::new(theme, &output);
         let output_match = output_match_for_output(&output);
 
-        Workspace {
+        let mut workspace = Workspace {
             output,
             tiling_layer,
             floating_layer,
@@ -407,6 +414,7 @@ impl Workspace {
             id: pinned.id.clone(),
             handle,
             focus_stack: FocusStacks::default(),
+            layout_history: LayoutHistory::new(),
             screencopy: ScreencopySessions::default(),
             output_stack: {
                 let mut queue = VecDeque::new();
@@ -418,7 +426,10 @@ impl Workspace {
             },
             backdrop_id: Id::new(),
             dirty: AtomicBool::new(false),
-        }
+        };
+
+        workspace.initialize_layout_history();
+        workspace
     }
 
     pub fn to_pinned(&self) -> Option<PinnedWorkspace> {
@@ -500,6 +511,26 @@ impl Workspace {
         }
     }
 
+    pub fn undo_layout(
+        &mut self,
+        seat: &Seat<State>,
+        workspace_state: &mut WorkspaceUpdateGuard<'_, State>,
+    ) -> bool {
+        self.layout_history.undo(self, seat, workspace_state)
+    }
+
+    pub fn redo_layout(
+        &mut self,
+        seat: &Seat<State>,
+        workspace_state: &mut WorkspaceUpdateGuard<'_, State>,
+    ) -> bool {
+        self.layout_history.redo(self, seat, workspace_state)
+    }
+
+    fn mark_layout_dirty(&mut self) {
+        self.layout_history.mark_dirty();
+    }
+
     pub fn animations_going(&self) -> bool {
         self.tiling_layer.animations_going()
             || self.floating_layer.animations_going()
@@ -529,8 +560,10 @@ impl Workspace {
             }
         }
 
+        let tiling_dirty = self.tiling_layer.take_history_dirty();
         let clients = self.tiling_layer.update_animation_state();
         self.floating_layer.update_animation_state();
+        self.layout_history.maybe_record(self, tiling_dirty);
         clients
     }
 
@@ -1228,6 +1261,8 @@ impl Workspace {
             ended_at: None,
         });
 
+        self.mark_layout_dirty();
+
         res
     }
 
@@ -1272,6 +1307,8 @@ impl Workspace {
                             })
                             .unwrap_or(FULLSCREEN_ANIMATION_DURATION)),
             );
+
+            self.mark_layout_dirty();
 
             Some((
                 surface.surface.clone(),
@@ -1372,6 +1409,8 @@ impl Workspace {
             self.floating_layer
                 .map_maximized(window, original_geometry, false);
         }
+
+        self.mark_layout_dirty();
     }
 
     pub fn toggle_floating_window(&mut self, seat: &Seat<State>, window: &CosmicMapped) {
